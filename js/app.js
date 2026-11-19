@@ -159,7 +159,46 @@ function showLanding(msg) {
   };
 }
 
-function setMyName(name) { S.me.name = name; lsSet('gachi:me', S.me); }
+// 닉네임은 기기 전체 공통, 기기 ID는 기본값 + 방마다 "이어서 하기"로 바꾼 ID를 따로 기억
+function setMyName(name) { S.me.name = name; lsSet('gachi:me', { ...lsGet('gachi:me', {}), name }); }
+function roomIdOverrides() { return lsGet('gachi:roomIds', {}); }
+function useIdInRoom(roomId, id) {
+  const map = roomIdOverrides(); map[roomId] = id; lsSet('gachi:roomIds', map);
+  S.me.id = id;
+}
+
+// 이 방에서 같은 닉네임으로 남긴 기록 찾기 (다른 기기/브라우저에서 쓴 것)
+function findPastSelf(name) {
+  const counts = new Map();
+  const add = (id, kind) => {
+    if (!id || id === S.me.id) return;
+    const c = counts.get(id) || { id, places: 0, memos: 0, votes: 0, total: 0 };
+    c[kind]++; c.total++; counts.set(id, c);
+  };
+  S.places.forEach((p) => p.proposer === name && add(p.proposer_id, 'places'));
+  S.memos.forEach((m) => m.author === name && add(m.author_id, 'memos'));
+  S.votes.forEach((v) => v.voter_name === name && add(v.voter_id, 'votes'));
+  return [...counts.values()].sort((a, b) => b.total - a.total)[0] || null;
+}
+
+function hasOwnRecords() {
+  const me = S.me.id;
+  return S.places.some((p) => p.proposer_id === me) || S.memos.some((m) => m.author_id === me) || S.votes.some((v) => v.voter_id === me);
+}
+
+function askContinue(name, past) {
+  return new Promise((resolve) => {
+    const bits = [past.places && `핀 ${past.places}개`, past.memos && `메모 ${past.memos}개`, past.votes && `하트 ${past.votes}개`].filter(Boolean).join(' · ');
+    openModal(`<h2>‘${esc(name)}’님, 이어서 할까요?</h2>
+      <p class="sub">이 여행에 같은 닉네임으로 남긴 기록이 있어요.<br><b>${bits}</b></p>
+      <p class="sub" style="font-size:12.5px">다른 기기나 카톡에서 내가 한 거라면 ‘이어서 하기’를 눌러 주세요. 하트와 메모를 다시 내 것으로 고칠 수 있어요.</p>
+      <button class="btn primary block" id="ctYes" type="button">네, 제가 맞아요 · 이어서 하기</button>
+      <button class="btn block" id="ctNo" type="button" style="margin-top:8px">아니요, 다른 사람이에요</button>`);
+    $('#modal').dataset.lock = '1';
+    $('#ctYes').onclick = () => { closeModal(); resolve(true); };
+    $('#ctNo').onclick = () => { closeModal(); resolve(false); };
+  });
+}
 
 /* ============================================================
  *  방 입장
@@ -171,6 +210,7 @@ async function enterRoom(id, { justCreated = false } = {}) {
   catch (err) { showLanding(`방을 불러오지 못했어요: ${err.message}`); return; }
   if (!data) { history.replaceState(null, '', location.pathname); showLanding('해당 링크의 여행 방을 찾을 수 없어요. (데모 모드라면 만든 브라우저에서만 열려요)'); return; }
   Object.assign(S, data);
+  S.me.id = roomIdOverrides()[id] || lsGet('gachi:me', {}).id || S.me.id;
 
   $('#landing').hidden = true;
   $('#app').hidden = false;
@@ -182,6 +222,15 @@ async function enterRoom(id, { justCreated = false } = {}) {
   recent.unshift({ id, title: S.room.title }); lsSet('gachi:recent', recent.slice(0, 10));
 
   if (!S.me.name) await askNickname();
+  else if (!justCreated && !roomIdOverrides()[id] && !hasOwnRecords()) {
+    // 이 기기엔 닉네임이 이미 있는데, 이 방에 같은 닉네임의 다른 기기 기록이 있으면 이어서 할지 물어봄
+    const past = findPastSelf(S.me.name);
+    if (past) {
+      const yes = await askContinue(S.me.name, past);
+      useIdInRoom(id, yes ? past.id : S.me.id); // '아니요'도 기억해서 다시 묻지 않음
+      if (yes) toast(`‘${S.me.name}’님 기록을 이어서 쓸게요`, 2500);
+    }
+  }
 
   initSheet();
   bindUi();
@@ -827,9 +876,16 @@ function askNickname(change = false) {
       <button class="btn primary block" style="margin-top:12px" type="submit">${change ? '저장' : '여행 계획 보러 가기'}</button></form>`);
     M.dataset.lock = change ? '' : '1';
     const inp = $('#nickInput'); setTimeout(() => inp.focus(), 50);
-    $('#nickForm').onsubmit = (e) => {
+    $('#nickForm').onsubmit = async (e) => {
       e.preventDefault(); const v = inp.value.trim(); if (!v) return;
-      setMyName(v); closeModal(); resolve(v);
+      setMyName(v); closeModal();
+      const past = S.roomId && findPastSelf(v);
+      if (past) {
+        const yes = await askContinue(v, past);
+        useIdInRoom(S.roomId, yes ? past.id : S.me.id);
+        if (yes) toast(`‘${v}’님 기록을 이어서 쓸게요`, 2500);
+      }
+      resolve(v);
     };
   });
 }

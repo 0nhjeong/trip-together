@@ -5,7 +5,7 @@
  *           인터넷이 안 되거나 4초 넘게 느리면 저장해 둔 앱 화면으로 실행합니다.
  *           카카오맵·Supabase 같은 외부 요청은 건드리지 않습니다(여행 데이터는 항상 실시간).
  */
-const CACHE = 'trip-together-v1';
+const CACHE = 'trip-together-v2';
 const ASSETS = [
   './',
   './index.html',

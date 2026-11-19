@@ -898,3 +898,23 @@ async function shareRoom(first) {
     openModal(`<h2>공유 링크</h2><p class="sub">아래 링크를 복사해서 친구에게 보내 주세요.</p><input class="input" value="${esc(url)}" readonly onclick="this.select()"><button class="btn primary block" style="margin-top:12px" onclick="this.closest('.overlay').hidden=true">확인</button>`);
   }
 }
+
+/* ============================================================
+ *  홈 화면 설치(PWA) — 서비스워커 등록
+ * ============================================================ */
+if ('serviceWorker' in navigator) {
+  // 새 버전이 설치되면 한 번 자동 새로고침 (처음 설치 때나 입력 중일 때는 건너뜀)
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    if (!hadController || reloading || typing) return;
+    reloading = true; location.reload();
+  });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').then((reg) => {
+      // 앱을 다시 볼 때마다 업데이트 확인
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+    }).catch((err) => console.warn('SW 등록 실패', err));
+  });
+}

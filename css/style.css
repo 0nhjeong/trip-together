@@ -262,6 +262,10 @@ textarea.input { height: auto; min-height: 60px; padding: 10px 12px; resize: ver
 .memo .m-body { margin-top: 3px; white-space: pre-wrap; word-break: break-word; font-size: 14px; }
 .memo-add { display: flex; gap: 6px; align-items: flex-end; margin-top: 8px; }
 .memo-add textarea { flex: 1; min-height: 44px; height: 44px; }
+.note-add { display: flex; gap: 6px; align-items: flex-end; margin: 4px 0 14px; }
+.note-add textarea { flex: 1; min-height: 64px; resize: vertical; }
+.memos.notes .memo { background: #fff; }
+.memos.notes .memo.mine { background: #FFFBF4; }
 .d-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 
 /* ---------- 시작 화면 ---------- */

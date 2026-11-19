@@ -35,6 +35,7 @@ serve.ps1             로컬 테스트 서버 (Windows)
    - `anon` `public` key → `SUPABASE_ANON_KEY`
    - ⚠️ `service_role` 키는 절대 넣지 마세요.
 4. (확인) **Database → Publications → supabase_realtime**에 rooms/places/memos/votes가 켜져 있으면 됩니다. SQL이 자동으로 켭니다.
+5. 앱이 업데이트되어 `supabase.sql`이 바뀌면 같은 방법으로 다시 실행하면 됩니다. 기존 데이터는 그대로 유지됩니다.
 
 ## 2) 카카오맵 JavaScript 키 발급 + 도메인 등록
 

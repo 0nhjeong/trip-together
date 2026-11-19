@@ -36,10 +36,10 @@ create table if not exists public.places (
 );
 create index if not exists places_room_idx on public.places(room_id);
 
--- 3) 공동 메모
+-- 3) 공동 메모 (place_id가 비어 있으면 '여행 전체 메모')
 create table if not exists public.memos (
   id          uuid primary key default gen_random_uuid(),
-  place_id    uuid not null references public.places(id) on delete cascade,
+  place_id    uuid references public.places(id) on delete cascade,
   room_id     text not null references public.rooms(id) on delete cascade,
   author      text not null,
   author_id   text,
@@ -48,6 +48,8 @@ create table if not exists public.memos (
   edited_at   timestamptz
 );
 create index if not exists memos_room_idx on public.memos(room_id);
+-- 예전 버전 SQL로 이미 만든 경우: 여행 전체 메모를 쓸 수 있게 place_id 필수 조건 해제
+alter table public.memos alter column place_id drop not null;
 
 -- 4) 하트 투표 (한 사람당 장소별 1개)
 create table if not exists public.votes (

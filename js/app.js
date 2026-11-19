@@ -55,6 +55,7 @@ const S = {
 };
 lsSet('gachi:me', S.me);
 let store, map, unsub;
+let sheetDirty = false; // 메모 입력 중이라 바텀시트 갱신을 미뤄 둔 상태
 let mapReady = false;
 const demo = { map: false, store: false, mapError: '' };
 
@@ -63,6 +64,8 @@ const placeById = (id) => S.places.find((p) => p.id === id);
 const votesOf = (id) => S.votes.filter((v) => v.place_id === id);
 const iVoted = (id) => S.votes.some((v) => v.place_id === id && v.voter_id === S.me.id);
 const memosOf = (id) => S.memos.filter((m) => m.place_id === id).sort((a, b) => a.created_at.localeCompare(b.created_at));
+// 여행 전체 메모 = 장소가 없는(place_id null) 메모, 최신순
+const tripNotes = () => S.memos.filter((m) => !m.place_id).sort((a, b) => b.created_at.localeCompare(a.created_at));
 const candidates = () => S.places.filter((p) => !p.day);
 const dayList = (d) => S.places.filter((p) => p.day === d)
   .sort((a, b) => (a.order_idx ?? 0) - (b.order_idx ?? 0) || a.created_at.localeCompare(b.created_at));
@@ -290,12 +293,27 @@ function renderSheet() {
   $('#cntCand').textContent = candidates().length;
   $('#cntPlan').textContent = S.places.length - candidates().length;
   $('#cntSearch').textContent = S.results.length;
+  $('#cntNotes').textContent = tripNotes().length;
   const tools = $('#sheetTools'); const body = $('#sheetBody');
+  // 메모를 쓰는 중에는 다시 그리지 않음 (다른 사람 수정이 와도 입력이 날아가지 않게) → 포커스가 빠지면 반영
+  if (body.contains(document.activeElement) && document.activeElement.tagName === 'TEXTAREA') { sheetDirty = true; return; }
+  sheetDirty = false;
   const scroll = body.scrollTop;
   if (S.tab === 'cand') { tools.innerHTML = candTools(); body.innerHTML = candBody(); }
   else if (S.tab === 'plan') { tools.innerHTML = planTools(); body.innerHTML = planBody(); }
+  else if (S.tab === 'notes') { tools.innerHTML = ''; body.innerHTML = notesBody(); }
   else { tools.innerHTML = ''; body.innerHTML = searchBody(); }
   body.scrollTop = scroll;
+}
+
+function notesBody() {
+  const notes = tripNotes();
+  return `<div class="note-add">
+      <textarea class="input" id="noteInput" rows="2" maxlength="1000" placeholder="${esc(S.me.name || '나')}(으)로 여행 메모 남기기">${esc(S.noteDraft || '')}</textarea>
+      <button class="btn teal" data-act="noteAdd">등록</button>
+    </div>
+    ${notes.length ? `<div class="memos notes">${notes.map((m) => memoHtml(m, 'act')).join('')}</div>`
+      : `<div class="empty"><span class="big">📝</span>준비물, 예산 나누는 법, 모이는 시간·장소처럼<br>여행 전체에 대한 이야기를 함께 적어 보세요.</div>`}`;
 }
 
 function catPills() {
@@ -571,9 +589,29 @@ function bindUi() {
     else if (act === 'quick') { $('#searchInput').value = v; doSearch(v); }
     else if (act === 'focusResult') focusResult(v);
     else if (act === 'addResult') { e.stopPropagation(); addFromResult(v); }
+    // 여행 전체 메모
+    else if (act === 'noteAdd') addTripNote();
+    else if (act === 'memoEditStart') { S.editMemo = id; document.activeElement?.blur(); renderSheet(); const ta = $('#memoEdit'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+    else if (act === 'memoCancel') { S.editMemo = null; $('#memoEdit')?.blur(); renderSheet(); }
+    else if (act === 'memoSave') {
+      const body = $('#memoEdit').value.trim(); if (!body) return;
+      const m = S.memos.find((x) => x.id === id); if (m) { m.body = body; m.edited_at = new Date().toISOString(); }
+      S.editMemo = null; $('#memoEdit').blur(); renderSheet();
+      run(() => store.updateMemo(id, body));
+    } else if (act === 'memoDel') {
+      if (!confirm('이 메모를 삭제할까요?')) return;
+      S.memos = S.memos.filter((x) => x.id !== id); renderSheet();
+      run(() => store.deleteMemo(id));
+    }
   };
   $('#sheetBody').addEventListener('click', sheetClick);
   $('#sheetTools').addEventListener('click', sheetClick);
+  $('#sheetBody').addEventListener('input', (e) => { if (e.target.id === 'noteInput') S.noteDraft = e.target.value; });
+  // 메모 입력이 끝나면(포커스가 빠지면) 그동안 미뤄 둔 화면 갱신 반영. 버튼 클릭이 먼저 끝나도록 잠깐 기다림
+  $('#sheetBody').addEventListener('focusout', () => setTimeout(() => {
+    const a = document.activeElement;
+    if (sheetDirty && !($('#sheetBody').contains(a) && a.tagName === 'TEXTAREA')) renderSheet();
+  }, 300));
   $('#sheetBody').addEventListener('change', (e) => {
     const t = e.target.closest('select[data-act="assign"]'); if (!t) return;
     assignDay(t.dataset.id, t.value ? Number(t.value) : null);
@@ -609,8 +647,27 @@ function bindUi() {
   });
 }
 
+async function addTripNote() {
+  const ta = $('#noteInput'); const body = (ta?.value || '').trim();
+  if (!body) { ta && ta.focus(); return; }
+  const m = { id: uuid(), place_id: null, room_id: S.roomId, author: S.me.name, author_id: S.me.id, body };
+  S.noteDraft = ''; ta.value = ''; ta.blur();
+  S.memos.push({ ...m, created_at: new Date().toISOString() }); renderSheet();
+  try { await store.addMemo(m); }
+  catch (err) {
+    console.error(err);
+    S.memos = S.memos.filter((x) => x.id !== m.id); S.noteDraft = body; renderSheet();
+    // DB가 아직 '장소 없는 메모'를 허용하지 않는 경우 (supabase.sql 업데이트 전)
+    toast(/place_id|not-null|null value/i.test(err.message || '')
+      ? 'DB 설정이 필요해요: Supabase SQL Editor에서 supabase.sql을 다시 실행해 주세요'
+      : `저장 실패: ${err.message}`, 4500);
+    return;
+  }
+  await reload();
+}
+
 function switchTab(tab) {
-  S.tab = tab;
+  S.tab = tab; S.editMemo = null;
   if (tab !== 'search') S.focusResult = null;
   renderSheet(); renderMap(); fitVisible();
   $('#sheetBody').scrollTop = 0;
@@ -794,14 +851,16 @@ function renderDetail(force = false) {
   D.firstElementChild.scrollTop = scroll;
 }
 
-function memoHtml(m) {
+// k: 버튼 속성 이름 — 상세 패널은 data-d, 바텀시트(여행 메모)는 data-act
+function memoHtml(m, k = 'd') {
   const mine = m.author_id === S.me.id;
+  const max = m.place_id ? 500 : 1000;
   if (S.editMemo === m.id) {
-    return `<div class="memo mine"><textarea class="input" id="memoEdit" rows="2" maxlength="500">${esc(m.body)}</textarea>
-      <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px"><button class="btn xs" data-d="memoCancel">취소</button><button class="btn teal xs" data-d="memoSave" data-id="${m.id}">저장</button></div></div>`;
+    return `<div class="memo mine"><textarea class="input" id="memoEdit" rows="3" maxlength="${max}">${esc(m.body)}</textarea>
+      <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px"><button class="btn xs" data-${k}="memoCancel">취소</button><button class="btn teal xs" data-${k}="memoSave" data-id="${m.id}">저장</button></div></div>`;
   }
   return `<div class="memo ${mine ? 'mine' : ''}"><div class="m-top"><span class="badge who">${esc(m.author)}</span><span>${timeAgo(m.created_at)}${m.edited_at ? ' · 수정됨' : ''}</span><span class="sp"></span>
-    ${mine ? `<button data-d="memoEditStart" data-id="${m.id}">수정</button><button data-d="memoDel" data-id="${m.id}">삭제</button>` : ''}</div>
+    ${mine ? `<button data-${k}="memoEditStart" data-id="${m.id}">수정</button><button data-${k}="memoDel" data-id="${m.id}">삭제</button>` : ''}</div>
     <div class="m-body">${esc(m.body)}</div></div>`;
 }
 

@@ -60,6 +60,19 @@ powershell -ExecutionPolicy Bypass -File serve.ps1
 ```
 그다음 http://localhost:8080 을 엽니다. ES 모듈을 쓰기 때문에 `index.html`을 더블클릭해서 열면 동작하지 않습니다.
 
+## 내 여행 발자국 (footprint.html)
+
+다녀온 시·군·구를 색칠하거나 사진으로 채우는 개인 기록 지도입니다. 첫 화면 버튼이나 여행 방 상단 🗺️ 버튼으로 들어갑니다.
+
+- **저장 위치:** 이 기기의 브라우저에만 저장됩니다. Supabase나 여행 방과는 관계가 없습니다.
+  - 기록: localStorage `gachi:footprint:v1`
+  - 사진: IndexedDB `gachi-footprint`. 사진은 최대 너비 600px의 WebP로 줄여서 저장하고, 지원하지 않는 브라우저에서는 JPEG로 저장합니다.
+- **백업과 복원:** 우상단 ⋯ 메뉴에서 백업 파일(JSON, 사진 포함)을 내보내거나 가져올 수 있습니다. 폰을 바꾸기 전에 백업해 두세요.
+- **지도 데이터:** 통계청(KOSTAT) 2018년 시·군·구 경계(250개)입니다. 출처는 [southkorea/southkorea-maps](https://github.com/southkorea/southkorea-maps)이고, 파일은 `data/skorea-municipalities-2018.topo.json`입니다.
+  - 2018년 이후 바뀐 내용 중 군위군의 대구 편입과 강원·전북 특별자치도 명칭은 화면에 반영했습니다.
+  - 경계 모양은 2018년 기준 그대로입니다.
+- **사용 라이브러리:** d3 7.9.0, topojson-client 3.1.0 (jsDelivr CDN). 서비스워커가 한 번 받아 두면 오프라인에서도 열립니다.
+
 ## 해외 지도 추가하기
 
 `js/map/mapService.js` 맨 위 주석에 Provider 인터페이스가 정리돼 있습니다.

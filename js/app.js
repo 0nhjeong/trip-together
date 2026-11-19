@@ -39,6 +39,23 @@ function timeAgo(iso) {
   if (s < 86400) return `${Math.floor(s / 3600)}시간 전`;
   const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()}`;
 }
+// 여행 기간 문구: "11/20(목) ~ 11/22(토) · 2박 3일" / 출발일 없으면 "2박 3일"
+function periodText(days, startDate) {
+  const n = Math.max(1, Number(days) || 1);
+  const len = n === 1 ? '당일치기' : `${n - 1}박 ${n}일`;
+  if (!startDate) return len;
+  const fmt = (dt) => `${dt.getMonth() + 1}/${dt.getDate()}(${'일월화수목금토'[dt.getDay()]})`;
+  const a = new Date(`${startDate}T00:00:00`); const b = new Date(a); b.setDate(b.getDate() + n - 1);
+  return n === 1 ? `${fmt(a)} · ${len}` : `${fmt(a)} ~ ${fmt(b)} · ${len}`;
+}
+// 최근 들어간 방 목록 (이 기기에만 저장)
+function rememberRoom() {
+  if (!S.room) return;
+  const list = lsGet('gachi:recent', []).filter((r) => r.id !== S.roomId);
+  list.unshift({ id: S.roomId, title: S.room.title, days: roomDays(), start: S.room.start_date || null, at: Date.now() });
+  lsSet('gachi:recent', list.slice(0, 12));
+}
+
 function dayLabel(d, room) {
   if (!room?.start_date) return `${d}일차`;
   const dt = new Date(`${room.start_date}T00:00:00`); dt.setDate(dt.getDate() + d - 1);
@@ -111,10 +128,27 @@ function showDemoBanner() {
 /* ============================================================
  *  시작 화면 (방 만들기 / 참여)
  * ============================================================ */
+function renderRecent() {
+  const box = $('#recentBox'); if (!box) return;
+  const list = lsGet('gachi:recent', []);
+  if (!list.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="l-card recent"><h2>내가 들어갔던 여행 <small>${list.length}</small></h2>
+    ${list.map((r) => `<div class="rc-row">
+      <a class="rc-main" href="?room=${encodeURIComponent(r.id)}"><b>${esc(r.title)}</b>
+        <small>${r.days ? esc(periodText(r.days, r.start)) : '기간 정보 없음'} · ${esc(r.id)}</small></a>
+      <a class="btn teal xs" href="?room=${encodeURIComponent(r.id)}">입장</a>
+      <button class="rc-del" type="button" data-id="${esc(r.id)}" aria-label="목록에서 지우기" title="목록에서 지우기">✕</button>
+    </div>`).join('')}
+    <p class="rc-note">목록에서 지워도 여행 방은 그대로 남아 있어요.</p></div>`;
+  box.querySelectorAll('.rc-del').forEach((b) => b.onclick = () => {
+    lsSet('gachi:recent', lsGet('gachi:recent', []).filter((r) => r.id !== b.dataset.id));
+    renderRecent();
+  });
+}
+
 function showLanding(msg) {
   $('#app').hidden = true;
   const L = $('#landing'); L.hidden = false;
-  const recent = lsGet('gachi:recent', []);
   L.innerHTML = `<div class="landing-in">
     <div class="hero">
       <span class="stamp">TRAVEL NOTE</span>
@@ -123,6 +157,12 @@ function showLanding(msg) {
       <div class="dash">📍<i></i>🍜<i></i>☕<i></i>🛏️</div>
     </div>
     ${msg ? `<p class="empty" style="padding:14px 0 0">${esc(msg)}</p>` : ''}
+    <a class="foot-cta" href="./footprint.html">
+      <span class="fc-ico">🗺️</span>
+      <span class="fc-txt"><b>내 여행 발자국 지도 열기</b><small>다녀온 시·군·구를 색칠하고 사진으로 채워요</small></span>
+      <span class="fc-go">›</span>
+    </a>
+    <div id="recentBox"></div>
     <form class="l-card" id="createForm">
       <h2>새 여행 만들기</h2>
       <div class="field"><label for="fTitle">여행 이름</label><input class="input" id="fTitle" maxlength="40" placeholder="예: 부산 2박 3일 먹방 여행" required></div>
@@ -137,8 +177,8 @@ function showLanding(msg) {
       <h2>받은 링크로 참여</h2>
       <div class="join-row"><input class="input" id="fJoin" placeholder="링크 또는 방 코드 붙여넣기"><button class="btn teal" type="submit">입장</button></div>
     </form>
-    ${recent.length ? `<div class="l-card recent"><h2>최근 여행</h2>${recent.slice(0, 6).map((r) => `<a href="?room=${encodeURIComponent(r.id)}">${esc(r.title)}<small>${esc(r.id)} ›</small></a>`).join('')}</div>` : ''}
   </div>`;
+  renderRecent();
 
   $('#createForm').onsubmit = async (e) => {
     e.preventDefault();
@@ -221,8 +261,7 @@ async function enterRoom(id, { justCreated = false } = {}) {
   showDemoBanner();
   document.title = `${S.room.title} · 같이갈래`;
 
-  const recent = lsGet('gachi:recent', []).filter((r) => r.id !== id);
-  recent.unshift({ id, title: S.room.title }); lsSet('gachi:recent', recent.slice(0, 10));
+  rememberRoom();
 
   if (!S.me.name) await askNickname();
   else if (!justCreated && !roomIdOverrides()[id] && !hasOwnRecords()) {
@@ -262,7 +301,9 @@ async function reload() {
     if (fresh.length) toast(`${fresh[0].proposer}님이 '${fresh[0].name}'을(를) 추가했어요`);
   }
   knownIds = new Set(data.places.map((p) => p.id));
+  const changedInfo = !S.room || S.room.title !== data.room.title || S.room.days !== data.room.days || S.room.start_date !== data.room.start_date;
   Object.assign(S, data);
+  if (changedInfo) rememberRoom(); // 여행 이름·기간이 바뀌면 최근 목록도 갱신
   if (S.sel && !placeById(S.sel)) closeDetail();
   renderAll();
 }
@@ -298,6 +339,7 @@ function renderSheet() {
   // 메모를 쓰는 중에는 다시 그리지 않음 (다른 사람 수정이 와도 입력이 날아가지 않게) → 포커스가 빠지면 반영
   if (body.contains(document.activeElement) && document.activeElement.tagName === 'TEXTAREA') { sheetDirty = true; return; }
   sheetDirty = false;
+  tools.classList.toggle('stack', S.tab === 'cand');
   const scroll = body.scrollTop;
   if (S.tab === 'cand') { tools.innerHTML = candTools(); body.innerHTML = candBody(); }
   else if (S.tab === 'plan') { tools.innerHTML = planTools(); body.innerHTML = planBody(); }
@@ -316,13 +358,15 @@ function notesBody() {
       : `<div class="empty"><span class="big">📝</span>준비물, 예산 나누는 법, 모이는 시간·장소처럼<br>여행 전체에 대한 이야기를 함께 적어 보세요.</div>`}`;
 }
 
+// 카테고리 6개(전체+5)는 6칸 격자로 → 좁은 폰(320px)에서도 잘리지 않고 한 줄에 다 보임
 function catPills() {
-  return `<span class="tools-sep"></span><button class="pill ${!S.cat ? 'on' : ''}" data-act="cat" data-v="">전체</button>`
-    + CAT_KEYS.map((k) => `<button class="pill ${S.cat === k ? 'on' : ''}" data-act="cat" data-v="${k}">${CATS[k].emoji} ${CATS[k].label}</button>`).join('');
+  return `<div class="cat-grid"><button class="pill ${!S.cat ? 'on' : ''}" data-act="cat" data-v="">전체</button>`
+    + CAT_KEYS.map((k) => `<button class="pill ${S.cat === k ? 'on' : ''}" data-act="cat" data-v="${k}"><span>${CATS[k].emoji}</span>${CATS[k].label}</button>`).join('')
+    + '</div>';
 }
 function candTools() {
-  return `<button class="pill ${S.sort === 'new' ? 'on' : ''}" data-act="sort" data-v="new">최신순</button>
-    <button class="pill ${S.sort === 'hot' ? 'on' : ''}" data-act="sort" data-v="hot">❤️ 인기순</button>${catPills()}`;
+  return `<div class="tools-row"><button class="pill ${S.sort === 'new' ? 'on' : ''}" data-act="sort" data-v="new">최신순</button>
+    <button class="pill ${S.sort === 'hot' ? 'on' : ''}" data-act="sort" data-v="hot">❤️ 인기순</button></div>${catPills()}`;
 }
 
 function daySelect(p) {
@@ -350,7 +394,7 @@ function candBody() {
     : (a, b) => b.created_at.localeCompare(a.created_at));
   if (!list.length) {
     return S.places.length && !S.cat
-      ? `<div class="empty"><span class="big">🗓️</span>후보가 모두 일정에 배정됐어요!<br>‘일차별 일정’ 탭에서 동선을 확인하세요.</div>`
+      ? `<div class="empty"><span class="big">🗓️</span>후보가 모두 일정에 배정됐어요!<br>‘일정’ 탭에서 동선을 확인하세요.</div>`
       : `<div class="empty"><span class="big">📍</span>${S.cat ? `${CATS[S.cat].label} 후보가 아직 없어요.` : '아직 후보가 없어요.'}<br>위 검색창에서 장소를 찾거나<br>지도를 탭해서 직접 핀을 찍어 보세요.</div>`;
   }
   return list.map((p) => {
@@ -390,12 +434,70 @@ function dayBlock(d) {
   }).join('');
 }
 
+/* ---------- 비용 정산 ---------- */
+// 정산 인원: 이 기기에서 방마다 기억, 처음엔 이 방에 참여한 사람 수
+function peopleCount() {
+  const saved = lsGet('gachi:people', {})[S.roomId];
+  if (saved) return saved;
+  const ids = new Set([...S.places.map((p) => p.proposer_id), ...S.memos.map((m) => m.author_id), ...S.votes.map((v) => v.voter_id), S.me.id].filter(Boolean));
+  return Math.max(1, Math.min(ids.size, 20));
+}
+function setPeople(n) {
+  const all = lsGet('gachi:people', {}); all[S.roomId] = Math.max(1, Math.min(50, n)); lsSet('gachi:people', all);
+}
+function costBox(list, label) {
+  const total = sumCost(list); const n = peopleCount();
+  const missing = list.filter((p) => !Number(p.cost)).length;
+  const per = total ? Math.ceil(total / n / 10) * 10 : 0; // 10원 단위 올림
+  return `<div class="cost-box">
+    <div class="cb-top"><span>🧾 ${esc(label)} 예상 비용</span><b>${won(total) || '0원'}</b></div>
+    <div class="cb-split">
+      <div class="stepper"><button data-act="people" data-v="-1" aria-label="인원 줄이기" ${n <= 1 ? 'disabled' : ''}>−</button><span><b>${n}</b>명 정산</span><button data-act="people" data-v="1" aria-label="인원 늘리기">＋</button></div>
+      <div class="cb-per">1인당 <b>${per ? won(per) : '0원'}</b></div>
+    </div>
+    ${missing ? `<div class="cb-note">비용을 안 적은 곳 ${missing}곳은 빠져 있어요 · 장소를 눌러 예상 비용을 적어 주세요</div>` : ''}
+  </div>`;
+}
+
+/* ---------- 카톡용 일정 텍스트 ---------- */
+function planText() {
+  const r = S.room; const n = roomDays(); const days = S.day ? [S.day] : Array.from({ length: n }, (_, i) => i + 1);
+  const lines = [`🧳 ${r.title}`, `📅 ${periodText(n, r.start_date)}`, ''];
+  let total = 0;
+  days.forEach((d) => {
+    const list = dayList(d); const sub = sumCost(list); total += sub;
+    lines.push(`[${dayLabel(d, r)}]`);
+    if (!list.length) lines.push('  (아직 정해진 곳 없음)');
+    list.forEach((p, i) => {
+      const c = CATS[p.category] || CATS.tour;
+      const extra = [p.cost ? won(p.cost) : '', p.status === 'done' ? '예약완료' : p.status === 'needed' ? '예약필요' : ''].filter(Boolean).join(' · ');
+      lines.push(`${i + 1}. ${c.emoji} ${p.name}${extra ? ` (${extra})` : ''}`);
+    });
+    if (sub) lines.push(`  → 합계 ${won(sub)}`);
+    lines.push('');
+  });
+  const np = peopleCount();
+  if (total) lines.push(`💰 ${S.day ? `${S.day}일차` : '총'} 예상 비용 ${won(total)}${np > 1 ? ` · ${np}명이면 1인당 ${won(Math.ceil(total / np / 10) * 10)}` : ''}`);
+  lines.push(`🔗 같이 보기: ${location.origin}${location.pathname}?room=${S.roomId}`);
+  return lines.join('\n');
+}
+async function copyPlan() {
+  const text = planText();
+  try { await navigator.clipboard.writeText(text); toast('일정을 복사했어요! 카톡에 붙여넣기 하세요 📋', 2800); }
+  catch (_) {
+    openModal(`<h2>카톡용 일정</h2><p class="sub">아래 글을 길게 눌러 복사해 주세요.</p><textarea class="input" rows="12" readonly style="font-size:13px">${esc(text)}</textarea><button class="btn primary block" style="margin-top:12px" onclick="this.closest('.overlay').hidden=true">닫기</button>`);
+  }
+}
+
 function planBody() {
   const n = roomDays();
-  const total = sumCost(S.places.filter((p) => p.day));
-  let h = `<div class="summary"><span>🧾 일정에 담긴 예상 비용</span><span>${won(total) || '0원'}</span></div>`;
-  if (S.day === 0) { for (let d = 1; d <= n; d++) h += dayBlock(d); return h; }
-  h = dayBlock(S.day);
+  const head = `<button class="btn sm block copy-plan" data-act="copyPlan">📋 카톡용 일정 복사${S.day ? ` (${S.day}일차)` : ''}</button>`;
+  if (S.day === 0) {
+    let h = head + costBox(S.places.filter((p) => p.day), '일정 전체');
+    for (let d = 1; d <= n; d++) h += dayBlock(d);
+    return h;
+  }
+  let h = head + costBox(dayList(S.day), `${S.day}일차`) + dayBlock(S.day);
   const cands = candidates();
   if (cands.length) {
     h += `<div class="day-head"><h3>후보에서 가져오기</h3><small>${cands.length}곳</small></div>`
@@ -589,6 +691,8 @@ function bindUi() {
     else if (act === 'quick') { $('#searchInput').value = v; doSearch(v); }
     else if (act === 'focusResult') focusResult(v);
     else if (act === 'addResult') { e.stopPropagation(); addFromResult(v); }
+    else if (act === 'people') { setPeople(peopleCount() + Number(v)); renderSheet(); }
+    else if (act === 'copyPlan') copyPlan();
     // 여행 전체 메모
     else if (act === 'noteAdd') addTripNote();
     else if (act === 'memoEditStart') { S.editMemo = id; document.activeElement?.blur(); renderSheet(); const ta = $('#memoEdit'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }

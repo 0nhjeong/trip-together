@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#FBF8F3" />
+  <title>내 여행 발자국 · 같이갈래</title>
+  <meta name="description" content="다녀온 시·군·구를 색칠하고 사진으로 채우는 나만의 한국 여행 지도" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="같이갈래" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <link rel="stylesheet" href="./css/style.css" />
+  <link rel="stylesheet" href="./css/footprint.css" />
+</head>
+<body class="fp-body">
+  <div class="fp" id="fp">
+    <header class="fp-top">
+      <a class="fp-back" id="fpBack" href="./" aria-label="뒤로">‹</a>
+      <div class="fp-title">
+        <strong>내 여행 발자국</strong>
+        <small id="fpSub">불러오는 중…</small>
+      </div>
+      <button class="fp-menu-btn" id="fpMenuBtn" type="button" aria-label="저장·백업 메뉴">⋯</button>
+    </header>
+
+    <div class="fp-map" id="fpMap">
+      <svg id="fpSvg" role="img" aria-label="대한민국 시·군·구 지도"></svg>
+      <!-- 지도 위에 떠 있는 통계·검색 (지역을 꾸미는 동안엔 숨겨서 지도를 넓게) -->
+      <div class="fp-float" id="fpFloat">
+        <div class="fp-stats" id="fpStats"></div>
+        <div class="fp-search">
+          <span class="search-ico" aria-hidden="true">⌕</span>
+          <input id="fpSearch" type="search" enterkeyhint="search" autocomplete="off" placeholder="지역 찾기 (예: 강릉, 제주, 해운대구)" />
+          <div class="fp-results" id="fpResults" hidden></div>
+        </div>
+      </div>
+      <div class="fp-loading" id="fpLoading">지도를 그리는 중…</div>
+      <div class="fp-zoom">
+        <button type="button" id="zIn" aria-label="확대">＋</button>
+        <button type="button" id="zOut" aria-label="축소">－</button>
+        <button type="button" id="zHome" aria-label="전국 보기" class="home">전국</button>
+      </div>
+      <div class="fp-hint" id="fpHint">지역을 눌러 색칠하거나 사진을 채워 보세요 · 두 손가락으로 확대</div>
+    </div>
+  </div>
+
+  <!-- 지역 꾸미기 시트 -->
+  <section class="fp-sheet" id="sheet" hidden aria-label="지역 꾸미기"></section>
+
+  <!-- 메뉴 -->
+  <div class="overlay mid" id="menu" hidden></div>
+  <input type="file" id="photoInput" accept="image/*" hidden />
+  <input type="file" id="importInput" accept="application/json,.json" hidden />
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+  <script type="module" src="./js/footprint.js"></script>
+</body>
+</html>
